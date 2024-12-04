@@ -35,23 +35,38 @@ send-fund: ## sends fund to the operator saved in tests/keys/test.ecdsa.key.json
 	cast send 0x860B6912C2d0337ef05bbC89b0C2CB6CbAEAB4A5 --value 10ether --private-key 0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6
 
 -----------------------------: ##
-# We pipe all zapper logs through https://github.com/maoueh/zap-pretty so make sure to install it
-# TODO: piping to zap-pretty only works when zapper environment is set to production, unsure why
-____OFFCHAIN_SOFTWARE___:
-start-operator: ## start operator (part of quickstart)
-	tsc && node dist/index.js
-
-spam-tasks: ## start tasks spamming (part of quickstart)
-	tsc && node dist/createNewTasks.js
-
------------------------------: ##
 _____HELPER_____: ##
 tests-contract: ## runs all forge tests
 	cd contracts && forge test
 
 ___RUST_OFFCHAIN_SOFTWARE___:
-start-rust-operator: ## start operator (part of quickstart) 
-	cargo run --bin start_operator
+start-rust-operator: ## start operator
+	cd operator/rust/crates/operator && cargo run --bin start_operator
 
-spam-rust-tasks:  ## start tasks spamming (part of quickstart)
-	cargo run --bin spam_tasks
+upload-to-ipfs: ## Upload a file to IPFS and create a task. Usage: make upload-to-ipfs FILE=/path/to/file
+	@if [ -z "$(FILE)" ]; then \
+		echo "Error: Please specify a file path using FILE=/path/to/file"; \
+		exit 1; \
+	fi
+	cd operator/rust/crates/operator && cargo run --bin upload_to_ipfs -- --file $(FILE)
+
+-----------------------------: ##
+____IPFS_COMMANDS___: ##
+
+install-ipfs: ## Install IPFS daemon
+	wget https://dist.ipfs.tech/kubo/v0.32.1/kubo_v0.32.1_linux-amd64.tar.gz
+	tar -xvzf kubo_v0.32.1_linux-amd64.tar.gz
+	cd kubo
+	sudo bash install.sh
+
+start-ipfs: ## Start IPFS daemon
+	ipfs daemon
+
+init-ipfs: ## Initialize IPFS if not already initialized
+	ipfs init
+
+stop-ipfs: ## Stop IPFS daemon
+	pkill -f ipfs
+
+ipfs-status: ## Check IPFS node status
+	ipfs swarm peers

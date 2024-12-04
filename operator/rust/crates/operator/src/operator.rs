@@ -26,23 +26,38 @@ use hello_world_utils::{
 };
 use once_cell::sync::Lazy;
 use rand::RngCore;
-use std::{env, str::FromStr};
+use std::{env, path::PathBuf, str::FromStr};
+use tracing::error;
+use url::Url;
+use std::sync::Arc;
+use crate::ipfs::IpfsService;
 
 pub const ANVIL_RPC_URL: &str = "http://localhost:8545";
+pub const DEFAULT_IPFS_API: &str = "http://localhost:5001";
 
 static KEY: Lazy<String> =
     Lazy::new(|| env::var("PRIVATE_KEY").expect("failed to retrieve private key"));
+
+static IPFS_SERVICE: Lazy<IpfsService> = Lazy::new(|| {
+    let ipfs_url = env::var("IPFS_API_URL").unwrap_or_else(|_| DEFAULT_IPFS_API.to_string());
+    IpfsService::new(&ipfs_url).expect("Failed to initialize IPFS service")
+});
 
 async fn sign_and_response_to_task(
     task_index: u32,
     task_created_block: u32,
     name: String,
 ) -> Result<()> {
+    // Interpret the task name as an IPFS CID and pin it
+    if let Err(e) = IPFS_SERVICE.pin_cid(&name).await {
+        get_logger().error(&format!("Failed to pin content {}: {:?}", name, e), "");
+        // Continue with the response even if pinning fails
+    }
+
     let pr = get_signer(&KEY.clone(), ANVIL_RPC_URL);
     let signer = PrivateKeySigner::from_str(&KEY.clone())?;
 
-    let message = format!("Hello, {}", name);
-    let m_hash = eip191_hash_message(keccak256(message.abi_encode_packed()));
+    let m_hash = eip191_hash_message(keccak256(name.abi_encode_packed()));
     let operators: Vec<DynSolValue> = vec![DynSolValue::Address(signer.address())];
     let signature: Vec<DynSolValue> =
         vec![DynSolValue::Bytes(signer.sign_hash_sync(&m_hash)?.into())];
@@ -54,12 +69,10 @@ async fn sign_and_response_to_task(
     ])
     .abi_encode_params();
 
-    get_logger().info(
-        &format!("Signing and responding to task : {:?}", task_index),
-        "",
-    );
-    let hello_world_contract_address: Address =
-        parse_hello_world_service_manager("contracts/deployments/hello-world/31337.json")?;
+    get_logger().info(&format!("Signing and responding to task : {:?}", task_index), "");
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = format!("{}/../../../../contracts/deployments/hello-world/31337.json", manifest_dir);
+    let hello_world_contract_address = parse_hello_world_service_manager(&path)?;
     let hello_world_contract = HelloWorldServiceManager::new(hello_world_contract_address, &pr);
 
     let response_hash = hello_world_contract
@@ -77,18 +90,38 @@ async fn sign_and_response_to_task(
         .get_receipt()
         .await?
         .transaction_hash;
-    get_logger().info(
-        &format!("Responded to task with tx hash {}", response_hash),
-        "",
-    );
+    get_logger().info(&format!("Responded to task with tx hash {}", response_hash), "");
     Ok(())
 }
 
 /// Monitor new tasks
-async fn monitor_new_tasks() -> Result<()> {
+pub async fn monitor_new_tasks() -> Result<()> {
+    let ipfs_url = env::var("IPFS_API_URL").unwrap_or_else(|_| DEFAULT_IPFS_API.to_string());
+    let ipfs_service = Arc::new(IpfsService::new(&ipfs_url)?);
+
+    // Monitor for new tasks
     let pr = get_signer(&KEY.clone(), ANVIL_RPC_URL);
-    let hello_world_contract_address: Address =
-        parse_hello_world_service_manager("contracts/deployments/hello-world/31337.json")?;
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = format!("{}/../../../../contracts/deployments/hello-world/31337.json", manifest_dir);
+    let hello_world_contract_address = parse_hello_world_service_manager(&path)?;
+
+    let hello_world_contract = HelloWorldServiceManager::new(hello_world_contract_address, pr);
+
+    //tokio::spawn(async move {
+        if let Err(e) = monitor_new_tasks_inner(ipfs_service.clone()).await {
+            error!("Error monitoring tasks: {:?}", e);
+        }
+    //});
+    Ok(())
+}
+
+async fn monitor_new_tasks_inner(
+    ipfs_service: Arc<IpfsService>,
+) -> Result<()> {
+    let pr = get_signer(&KEY.clone(), ANVIL_RPC_URL);
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = format!("{}/../../../../contracts/deployments/hello-world/31337.json", manifest_dir);
+    let hello_world_contract_address = parse_hello_world_service_manager(&path)?;
     let mut latest_processed_block = pr.get_block_number().await?;
 
     loop {
@@ -108,7 +141,7 @@ async fn monitor_new_tasks() -> Result<()> {
                         .expect("Failed to decode log new task created")
                         .inner
                         .data;
-                    get_logger().info(&format!("New task detected :Hello{:?} ", task.name), "");
+                    get_logger().info(&format!("New task detected: {:?} ", task.name), "");
 
                     let _ = sign_and_response_to_task(taskIndex, task.taskCreatedBlock, task.name)
                         .await;
@@ -123,14 +156,17 @@ async fn monitor_new_tasks() -> Result<()> {
     }
 }
 
-async fn register_operator() -> Result<()> {
+pub async fn register_operator() -> Result<()> {
     let pr = get_signer(&KEY.clone(), ANVIL_RPC_URL);
     let signer = PrivateKeySigner::from_str(&KEY.clone())?;
 
     let default_slasher = Address::ZERO; // We don't need slasher for our example.
     let default_strategy = Address::ZERO; // We don't need strategy for our example.
 
-    let data = std::fs::read_to_string("contracts/deployments/core/31337.json")?;
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let core_path = format!("{}/../../../../contracts/deployments/core/31337.json", manifest_dir);
+
+    let data = std::fs::read_to_string(&core_path)?;
     let el_parsed: EigenLayerData = serde_json::from_str(&data)?;
     let delegation_manager_address: Address = el_parsed.addresses.delegation.parse()?;
     let avs_directory_address: Address = el_parsed.addresses.avs_directory.parse()?;
@@ -163,7 +199,7 @@ async fn register_operator() -> Result<()> {
         .is_operator_registered(signer.address())
         .await
         .unwrap();
-    get_logger().info(&format!("is registered {}", is_registered), &"");
+    get_logger().info(&format!("is registered {}", is_registered), "");
     #[allow(unused)]
     let tx_hash = elcontracts_writer_instance
         .register_as_operator(operator)
@@ -173,7 +209,7 @@ async fn register_operator() -> Result<()> {
             "Operator registered on EL successfully tx_hash {:?}",
             tx_hash
         ),
-        &"",
+        "",
     );
     let mut salt = [0u8; 32];
     rand::rngs::OsRng.fill_bytes(&mut salt);
@@ -182,8 +218,8 @@ async fn register_operator() -> Result<()> {
     let now = Utc::now().timestamp();
     let expiry: U256 = U256::from(now + 3600);
 
-    let hello_world_contract_address: Address =
-        parse_hello_world_service_manager("contracts/deployments/hello-world/31337.json")?;
+    let hello_world_path = format!("{}/../../../../contracts/deployments/hello-world/31337.json", manifest_dir);
+    let hello_world_contract_address = parse_hello_world_service_manager(&hello_world_path)?;
     let digest_hash = elcontracts_reader_instance
         .calculate_operator_avs_registration_digest_hash(
             signer.address(),
@@ -200,7 +236,7 @@ async fn register_operator() -> Result<()> {
         expiry: expiry,
     };
     let stake_registry_address =
-        parse_stake_registry_address("contracts/deployments/hello-world/31337.json")?;
+        parse_stake_registry_address(&hello_world_path)?;
     let contract_ecdsa_stake_registry = ECDSAStakeRegistry::new(stake_registry_address, &pr);
     let registeroperator_details_call: alloy::contract::CallBuilder<
         _,
@@ -223,30 +259,8 @@ async fn register_operator() -> Result<()> {
             signer.address(),
             register_hello_world_hash
         ),
-        &"",
+        "",
     );
 
     Ok(())
-}
-
-#[tokio::main]
-pub async fn main() {
-    use tokio::signal;
-    dotenv().ok();
-    init_logger(LogLevel::Info);
-    if let Err(e) = register_operator().await {
-        eprintln!("Failed to register operator: {:?}", e);
-        return;
-    }
-
-    // Start the task monitoring as a separate async task to keep the process running
-    tokio::spawn(async {
-        if let Err(e) = monitor_new_tasks().await {
-            eprintln!("Failed to monitor new tasks: {:?}", e);
-        }
-    });
-
-    // Wait for a Ctrl+C signal to gracefully shut down
-    let _ = signal::ctrl_c().await;
-    get_logger().info("Received Ctrl+C, shutting down...", "");
 }

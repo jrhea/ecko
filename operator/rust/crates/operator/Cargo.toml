@@ -35,20 +35,21 @@ chrono = "0.4.38"
 tracing = "0.1.40"
 futures-util = "0.3"
 eyre = "0.6.12"
+ipfs-api-backend-hyper = "0.6"  # IPFS HTTP API client
+url = "2.4"  # For parsing IPFS gateway URLs
+clap = { version = "4.4", features = ["derive"] }  # CLI argument parsing
 #tokio
 tokio = {workspace = true, features =["full"]}
 [lints]
 workspace = true
-
 
 [dev-dependencies]
 serial_test = "3.1.1"
 
 [[bin]]
 name = "start_operator"
-path = "src/start_operator.rs"
-
+path = "src/bin/start_operator.rs"
 
 [[bin]]
-name = "spam_tasks"
-path = "src/spam_tasks.rs"
+name = "upload_to_ipfs"
+path = "src/bin/upload_to_ipfs.rs"

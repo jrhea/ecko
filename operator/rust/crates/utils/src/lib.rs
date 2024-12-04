@@ -77,30 +77,62 @@ pub struct EigenLayerAddresses {
 }
 
 pub fn parse_hello_world_service_manager(path: &str) -> eyre::Result<Address> {
-    let data = std::fs::read_to_string(path)?;
-    let parsed: HelloWorldData = serde_json::from_str(&data)?;
-    let hello_world_contract_address: Address =
-        parsed.addresses.hello_world_service_manager.parse()?;
-    Ok(hello_world_contract_address)
+    match std::fs::read_to_string(path) {
+        Ok(data) => {
+            let parsed: HelloWorldData = serde_json::from_str(&data)?;
+            let hello_world_contract_address: Address =
+                parsed.addresses.hello_world_service_manager.parse()?;
+            Ok(hello_world_contract_address)
+        },
+        Err(e) => {
+            let current_dir = std::env::current_dir().unwrap_or_default();
+            Err(eyre::eyre!("Failed to read file at path '{}'. Current working directory: '{}'. Error: {}", 
+                path, current_dir.display(), e))
+        }
+    }
 }
 
 pub fn parse_stake_registry_address(path: &str) -> eyre::Result<Address> {
-    let data = std::fs::read_to_string(path)?;
-    let parsed: HelloWorldData = serde_json::from_str(&data)?;
-    let stake_registry_address: Address = parsed.addresses.stake_registry.parse()?;
-    Ok(stake_registry_address)
+    match std::fs::read_to_string(path) {
+        Ok(data) => {
+            let parsed: HelloWorldData = serde_json::from_str(&data)?;
+            let stake_registry_address: Address = parsed.addresses.stake_registry.parse()?;
+            Ok(stake_registry_address)
+        },
+        Err(e) => {
+            let current_dir = std::env::current_dir().unwrap_or_default();
+            Err(eyre::eyre!("Failed to read file at path '{}'. Current working directory: '{}'. Error: {}", 
+                path, current_dir.display(), e))
+        }
+    }
 }
 
 pub fn parse_delegation_manager_address(path: &str) -> eyre::Result<Address> {
-    let data = std::fs::read_to_string(path)?;
-    let parsed: EigenLayerData = serde_json::from_str(&data)?;
-    let delegation_manager_address: Address = parsed.addresses.delegation.parse()?;
-    Ok(delegation_manager_address)
+    match std::fs::read_to_string(path) {
+        Ok(data) => {
+            let parsed: EigenLayerData = serde_json::from_str(&data)?;
+            let delegation_manager_address: Address = parsed.addresses.delegation.parse()?;
+            Ok(delegation_manager_address)
+        },
+        Err(e) => {
+            let current_dir = std::env::current_dir().unwrap_or_default();
+            Err(eyre::eyre!("Failed to read file at path '{}'. Current working directory: '{}'. Error: {}", 
+                path, current_dir.display(), e))
+        }
+    }
 }
 
 pub fn parse_avs_directory_address(path: &str) -> eyre::Result<Address> {
-    let data = std::fs::read_to_string(path)?;
-    let parsed: EigenLayerData = serde_json::from_str(&data)?;
-    let avs_directory_address: Address = parsed.addresses.avs_directory.parse()?;
-    Ok(avs_directory_address)
+    match std::fs::read_to_string(path) {
+        Ok(data) => {
+            let parsed: EigenLayerData = serde_json::from_str(&data)?;
+            let avs_directory_address: Address = parsed.addresses.avs_directory.parse()?;
+            Ok(avs_directory_address)
+        },
+        Err(e) => {
+            let current_dir = std::env::current_dir().unwrap_or_default();
+            Err(eyre::eyre!("Failed to read file at path '{}'. Current working directory: '{}'. Error: {}", 
+                path, current_dir.display(), e))
+        }
+    }
 }
